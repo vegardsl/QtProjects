@@ -98,7 +98,7 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
         //    waitKey(100);
         //}
 
-        Ptr<CannyEdgeDetector> cannyEdge = cuda::createCannyEdgeDetector(75.0,150.0,3,false);
+        Ptr<CannyEdgeDetector> cannyEdge = cuda::createCannyEdgeDetector(50.0,75.0,3,false);
         //Ptr<CannyEdgeDetector> cannyEdge = cuda::createCannyEdgeDetector(1200.0,1300.0,5,false);
 
         cv::cvtColor(imgOriginal, imgGrayscale, CV_BGR2GRAY);               // convert to grayscale
@@ -137,8 +137,8 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
 
         Ptr<HoughSegmentDetector> hough = createHoughSegmentDetector(1.0f
                                                                      , (float) (CV_PI / 180.0f)
-                                                                     , 75    // minLineLength.
-                                                                     , 15     // maxLineGap.
+                                                                     , 50    // minLineLength.
+                                                                     , 35     // maxLineGap.
                                                                      , MAX_NUM_LINES // Maximum number of lines to detect.
                                                                      );
 
@@ -156,6 +156,9 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
             d_lines.download(h_lines);
         }
 
+        double x_sum = 0;
+        double y_sum = 0;
+        double x_mean, y_mean;
         for (size_t i = 0; i < lines_gpu.size(); ++i)
         {
             Vec4i l = lines_gpu[i];
@@ -165,14 +168,61 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
             //cout << "Second point: ";
             //cout << Point(l[2], l[3]) << endl;
             //numLines = (int)i;
+
             lineStored = storeLine(Point(l[0], l[1]),Point(l[2], l[3]),numLines);
             if(lineStored)
             {
+                x_sum += l[0] + l[2];
+                y_sum += l[1] + l[3];
                 numLines++;
             }
 
             //waitKey();
         }
+
+        x_mean = x_sum/(2*numLines);
+        y_mean = y_sum/(2*numLines);
+        cv::Point2f mean(x_mean,y_mean);
+        double X[2] = {x_mean, y_mean};
+        double covarianceArray[2][2] = {0};
+        for(int j = 0; j<2; j++)
+        {
+            for(int k = 0; k<2; k++)
+            {
+                for (size_t i = 0; i < lines_gpu.size(); ++i)
+                {
+                   Vec4i l = lines_gpu[i];
+                   covarianceArray[j][k] += (l[0+j] - X[j])*(l[0+k] - X[k]);
+                   covarianceArray[j][k] += (l[2+j] - X[j])*(l[2+k] - X[k]);
+                }
+                covarianceArray[j][k] = (1.0/ (2*numLines - 1) )*covarianceArray[j][k];
+            }
+        }
+
+        Mat covmat = (Mat_<double>(2,2) <<
+                      covarianceArray[0][0], covarianceArray[0][1],
+                      covarianceArray[1][0], covarianceArray[1][1]
+                      );
+
+        Mat eigenvalues, eigenvectors;
+        eigen(covmat, eigenvalues, eigenvectors);
+        double angle = qAtan2(eigenvectors.at<double>(0,1), eigenvectors.at<double>(0,0));
+
+        //Shift the angle to the [0, 2pi] interval instead of [-pi, pi]
+        if(angle < 0)
+            angle += 6.28318530718;
+
+        //Conver to degrees instead of radians
+        angle = 180*angle/3.14159265359;
+
+        //Calculate the size of the minor and major axes
+        double halfmajoraxissize=2.4477*sqrt(eigenvalues.at<double>(0));
+        double halfminoraxissize=2.4477*sqrt(eigenvalues.at<double>(1));
+
+        //Return the oriented ellipse
+        //The -angle is used because OpenCV defines the angle clockwise instead of anti-clockwise
+        RotatedRect ellipse = RotatedRect(mean, cv::Size2f(halfmajoraxissize, halfminoraxissize), -angle);
+        cv::ellipse(imgOriginal, ellipse, Scalar::all(255), 2);
 
         /* Could be used for later ;)*/
         //int rows = imgOriginal.rows;
