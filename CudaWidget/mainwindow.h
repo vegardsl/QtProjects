@@ -30,7 +30,7 @@ using namespace cv;
 using namespace cv::cuda;
 using namespace std;
 
-#define MAX_NUM_LINES 100
+#define MAX_NUM_LINES 125
 
 namespace Ui {
 class MainWindow;
@@ -80,6 +80,19 @@ private:
 
     double vanishingPoint[2];
     int *ptr_vanishingPoint;
+    int **ptr_pointsInEllipse;
+
+    void splitEllipse(double semiMajorAxis,
+                      double semiMinorAxis,
+                      Point center,
+                      double angle,
+                      vector<Vec4i> lines);
+
+    bool pointInsideEllipse(double semiMajorAxis,
+                            double semiMinorAxis,
+                            Point center,
+                            double angle,
+                            Point point);
 
     int storeLineIntersection(int x, int y, double weight, int numStoredPoints, int sizeAllocated);
     int expandLineIntersectionStorage(int sizeAllocated);

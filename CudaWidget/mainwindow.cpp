@@ -77,27 +77,6 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
         }
     }
 
-    //QString strFileName = QFileDialog::getOpenFileName();       // bring up open file dialog
-
-    //imgOriginal = cv::imread(strFileName.toStdString());        // open image
-
-    //VideoCapture vcap(0);
-
-    //while(1)
-    //{
-        //vcap.read(imgOriginal);
-        /*
-        if(imgOriginal.empty())
-        {
-            continue;
-        }
-        */
-
-        //while(imgOriginal.empty())
-        //{
-        //    waitKey(100);
-        //}
-
         Ptr<CannyEdgeDetector> cannyEdge = cuda::createCannyEdgeDetector(50.0,75.0,3,false);
         //Ptr<CannyEdgeDetector> cannyEdge = cuda::createCannyEdgeDetector(1200.0,1300.0,5,false);
 
@@ -126,14 +105,7 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
         }
 
         d_imgCanny.download(imgCanny);
-/*
-        Ptr<HoughSegmentDetector> hough = createHoughSegmentDetector(1.0f
-                                                                     , (float) (CV_PI / 180.0f)
-                                                                     , 150    // minLineLength.
-                                                                     , 50     // maxLineGap.
-                                                                     , MAX_NUM_LINES // Maximum number of lines to detect.
-                                                                     );
-*/
+
 
         Ptr<HoughSegmentDetector> hough = createHoughSegmentDetector(1.0f
                                                                      , (float) (CV_PI / 180.0f)
@@ -216,12 +188,16 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
         angle = 180*angle/3.14159265359;
 
         //Calculate the size of the minor and major axes
-        double halfmajoraxissize=2.4477*sqrt(eigenvalues.at<double>(0));
-        double halfminoraxissize=2.4477*sqrt(eigenvalues.at<double>(1));
+        double halfmajoraxissize=2.4477*sqrt(eigenvalues.at<double>(0));//2.4477*
+        double halfminoraxissize=2.4477*sqrt(eigenvalues.at<double>(1));//2.4477*
 
         //Return the oriented ellipse
         //The -angle is used because OpenCV defines the angle clockwise instead of anti-clockwise
-        RotatedRect ellipse = RotatedRect(mean, cv::Size2f(halfmajoraxissize, halfminoraxissize), -angle);
+        RotatedRect ellipse = RotatedRect(mean, // Center.
+                                          cv::Size2f(halfmajoraxissize, halfminoraxissize), // Size.
+                                          -angle    // Angle.
+                                          );
+
         cv::ellipse(imgOriginal, ellipse, Scalar::all(255), 2);
 
         /* Could be used for later ;)*/
@@ -229,51 +205,7 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
         //int cols = imgOriginal.cols;
         //qDebug() << "imgOriginal dims: " + QString::number(rows) + " " + QString::number(cols);
 
-        /*
-        vector<Vec4i> lines;
-        HoughLinesP( imgCanny, lines, 1, CV_PI/180, 80, 30, 10 );
-        cuda::HoughLinesDetector
-        for( size_t i = 0; i < lines.size(); i++ )
-        {
-            float x1 = lines[i][0], y1 = lines[i][1];
-            float x2 = lines[i][2], y2 = lines[i][3];
 
-
-            line( imgOriginal, Point(lines[i][0], lines[i][1]),
-            Point(lines[i][2], lines[i][3]), Scalar(0,0,255), 3, 4 );
-        }
-
-*/
-/*
-        vector<Vec2f> lines;
-        HoughLines(imgCanny, lines, 1, CV_PI/180, 100, 0, 0 );
-
-        for( size_t i = 0; i < lines.size(); i++ )
-        {
-           float rho = lines[i][0], theta = lines[i][1];
-           Point pt1, pt2;
-           double a = cos(theta), b = sin(theta);
-           double x0 = a*rho, y0 = b*rho;
-           pt1.x = cvRound(x0 + 1000*(-b));
-           pt1.y = cvRound(y0 + 1000*(a));
-           pt2.x = cvRound(x0 - 1000*(-b));
-           pt2.y = cvRound(y0 - 1000*(a));
-           line( imgOriginal, pt1, pt2, Scalar(0,0,255), 3, CV_AA);
-        }
-*/
-
-        /*
-        if(!imgOriginal.empty()||!imgLines.empty())
-        {
-            //mVideoStreamThread.unlockMutex();
-            qDebug() << "No lines were found.";
-        }
-        else
-        {
-            imshow("detected lines", imgLines);
-            qDebug() << "Lines were found.";
-        }
-        */
 
         //printStoredLines(numLines);
         calculateLineIntersect(numLines);
@@ -326,9 +258,67 @@ void MainWindow::prepAndDisplayNewFrame(Mat imgOriginal)
         }
         free(lines);
 
-        mVideoStreamThread.unlockMutex(); // Unable calls to this function before it is finished.
-    //}
+        mVideoStreamThread.unlockMutex(); // Enables calls to this function.
 }
+
+bool MainWindow::pointInsideEllipse(double semiMajorAxis,
+                                    double semiMinorAxis,
+                                    Point center,
+                                    double angle,
+                                    Point point)
+{
+    return true;
+}
+
+void MainWindow::splitEllipse(double semiMajorAxis,
+                              double semiMinorAxis,
+                              Point center,
+                              double angle,
+                              vector<Vec4i> lines)
+{
+    if((ptr_pointsInEllipse = (int **)calloc(2*MAX_NUM_LINES,sizeof(*ptr_pointsInEllipse))) == NULL)
+    {
+        cout << "** calloc failed!" << endl;
+        return;
+    }
+    int numStoredPoints = 0;
+    for (size_t i = 0; i < lines.size(); ++i)
+    {
+        Vec4i l = lines[i];
+        if(pointInsideEllipse(semiMajorAxis,semiMinorAxis,center,angle,Point(l[0],l[1])))
+        {
+            if((ptr_pointsInEllipse[numStoredPoints] = (int*)calloc(2,sizeof(*ptr_pointsInEllipse[numStoredPoints]))) == NULL)
+            {
+                cout << "* calloc failed!" << endl;
+                return;
+            }
+            ptr_pointsInEllipse[numStoredPoints][0] = l[0];
+            ptr_pointsInEllipse[numStoredPoints][1] = l[1];
+            numStoredPoints++;
+        }
+        if(pointInsideEllipse(semiMajorAxis,semiMinorAxis,center,angle,Point(l[2],l[3])))
+        {
+            if((ptr_pointsInEllipse[numStoredPoints] = (int*)calloc(2,sizeof(*ptr_pointsInEllipse[numStoredPoints]))) == NULL)
+            {
+                cout << "* calloc failed!" << endl;
+                return;
+            }
+            ptr_pointsInEllipse[numStoredPoints][0] = l[0];
+            ptr_pointsInEllipse[numStoredPoints][1] = l[1];
+            numStoredPoints++;
+        }
+    }
+    int **tmp; // Temporary variable for avoiding memory leak.
+    if ((tmp = (int**)realloc(ptr_pointsInEllipse, sizeof(int *) * (numStoredPoints))) == NULL)
+    {
+        /* Possible free on ptr_pointsInEllipse? Depends on what you want */
+        fprintf(stderr, "ERROR: realloc failed");
+        return;
+    }
+    ptr_pointsInEllipse = tmp;
+    //free(tmp);?
+}
+
 
 /**
  * @brief MainWindow::storeLine
